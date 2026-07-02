@@ -1,5 +1,7 @@
 # WhatsApp Dashboard
 
+[![CI](https://github.com/aifamecomputers-dev/whatsapp-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/aifamecomputers-dev/whatsapp-dashboard/actions/workflows/ci.yml)
+
 A self-hosted web dashboard for managing multiple WhatsApp Business numbers (messaging,
 via the official Meta WhatsApp Cloud API) alongside real voice call logging and recording
 (via Twilio Voice, since WhatsApp itself exposes no call-log or recording API). Built for
