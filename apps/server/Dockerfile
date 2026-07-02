@@ -16,8 +16,11 @@ RUN npm run build -w packages/shared && npm run build -w apps/server
 FROM node:20-slim AS runtime
 WORKDIR /repo
 ENV NODE_ENV=production
+
+# npm workspaces hoists shared deps into the root node_modules; there's no
+# separate apps/server/node_modules to copy (Node's module resolution walks up
+# from WORKDIR to find this one).
 COPY --from=base /repo/node_modules ./node_modules
-COPY --from=base /repo/apps/server/node_modules ./apps/server/node_modules
 COPY --from=build /repo/apps/server/dist ./apps/server/dist
 COPY --from=build /repo/packages/shared ./packages/shared
 COPY apps/server/package.json ./apps/server/package.json
