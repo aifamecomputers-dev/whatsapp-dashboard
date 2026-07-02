@@ -1,0 +1,10 @@
+node_modules/
+dist/
+build/
+.env
+*.local
+data/media/*
+!data/media/.gitkeep
+.DS_Store
+*.log
+coverage/

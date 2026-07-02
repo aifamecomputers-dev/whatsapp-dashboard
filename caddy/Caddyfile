@@ -1,0 +1,12 @@
+{$PUBLIC_DOMAIN:localhost} {
+	encode gzip
+
+	@backend path /api/* /webhooks/* /socket.io/*
+	handle @backend {
+		reverse_proxy server-web:4000
+	}
+
+	handle {
+		reverse_proxy web:80
+	}
+}

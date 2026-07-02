@@ -1,0 +1,26 @@
+# Local development: only infra (Postgres + Redis) runs in Docker.
+# Run the app processes on the host so you get fast reloads:
+#   npm run dev:server   (Fastify API + Socket.IO on :4000)
+#   npm run dev:worker   (BullMQ worker)
+#   npm run dev:web      (Vite dev server on :5173, proxies /api and /socket.io to :4000)
+#
+# Usage: docker compose -f docker-compose.dev.yml up
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: whatsapp_dashboard
+      POSTGRES_PASSWORD: whatsapp_dashboard
+      POSTGRES_DB: whatsapp_dashboard
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_dev_data:
