@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build & unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Installs all workspaces and (via the root postinstall script) builds
+      # packages/shared, which apps/server and apps/web both import as a real
+      # workspace dependency.
+      - name: Install dependencies
+        run: npm ci
+
+      # Typechecks and builds packages/shared, apps/server, and apps/web in order.
+      # This is the primary gate: it would have caught every real bug found while
+      # scaffolding this repo (workspace resolution, generic type mismatches,
+      # duplicate transitive deps), not just style issues.
+      - name: Build all workspaces
+        run: npm run build
+
+      - name: Run server unit tests
+        run: npm run test -w apps/server
+
+      # `generate` only creates a new file when schema.ts has drifted from the last
+      # committed snapshot (it doesn't need a live DB connection for that). Catches
+      # the case where someone edited schema.ts but forgot to commit the migration.
+      - name: Verify no uncommitted schema changes
+        working-directory: apps/server
+        run: |
+          npx drizzle-kit generate --name ci-check
+          if [ -n "$(git status --porcelain src/db/migrations)" ]; then
+            echo "schema.ts has changes that aren't reflected in a committed migration:"
+            git status --porcelain src/db/migrations
+            exit 1
+          fi
+
+  docker-build:
+    name: Docker image build (no push)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build server image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/server/Dockerfile
+          push: false
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,mode=max,scope=server
+
+      - name: Build web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: false
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
