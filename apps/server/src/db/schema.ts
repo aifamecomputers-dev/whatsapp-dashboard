@@ -32,22 +32,12 @@ export const messageTypeEnum = pgEnum("message_type", [
 ]);
 export const messageStatusEnum = pgEnum("message_status", ["pending", "sent", "delivered", "read", "failed"]);
 export const callDirectionEnum = pgEnum("call_direction", ["inbound", "outbound"]);
-export const callStatusEnum = pgEnum("call_status", [
-  "queued",
-  "ringing",
-  "in-progress",
-  "completed",
-  "busy",
-  "failed",
-  "no-answer",
-  "canceled",
-]);
-export const consentEventEnum = pgEnum("consent_event", [
-  "notice_played",
-  "recording_started",
-  "recording_stopped",
-]);
-export const webhookSourceEnum = pgEnum("webhook_source", ["meta", "twilio"]);
+// WhatsApp Calling API call-event outcomes we log (no media/answer flow — see
+// modules/calls — so most inbound calls end up "missed" unless a WhatsApp
+// client elsewhere answers them; there is no "in-progress"/"completed" concept
+// on our side since we never join the call).
+export const callStatusEnum = pgEnum("call_status", ["ringing", "missed", "rejected", "terminated", "failed"]);
+export const webhookSourceEnum = pgEnum("webhook_source", ["meta"]);
 export const webhookEventStatusEnum = pgEnum("webhook_event_status", ["pending", "processed", "failed"]);
 
 // ---------- Core identity ----------
@@ -91,7 +81,7 @@ export const refreshTokens = pgTable("refresh_tokens", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-// ---------- Phone numbers (WhatsApp + Twilio Voice on the same DID) ----------
+// ---------- Phone numbers (WhatsApp Cloud API messaging + Calling) ----------
 export const phoneNumbers = pgTable("phone_numbers", {
   id: uuid("id").primaryKey().defaultRandom(),
   label: text("label").notNull(),
@@ -105,21 +95,10 @@ export const phoneNumbers = pgTable("phone_numbers", {
   whatsappAccessTokenTag: text("whatsapp_access_token_tag"),
   whatsappVerifiedName: text("whatsapp_verified_name"),
   whatsappStatus: whatsappStatusEnum("whatsapp_status").notNull().default("pending"),
-
-  // Twilio Voice
-  twilioAccountSid: text("twilio_account_sid"),
-  twilioAuthTokenCiphertext: text("twilio_auth_token_ciphertext"),
-  twilioAuthTokenIv: text("twilio_auth_token_iv"),
-  twilioAuthTokenTag: text("twilio_auth_token_tag"),
-  twilioPhoneSid: text("twilio_phone_sid"),
-  twilioTwimlAppSid: text("twilio_twiml_app_sid"),
-  // API Key (not the Auth Token) is what Twilio's Voice SDK access tokens are
-  // signed with (twilio.jwt.AccessToken requires accountSid + apiKeySid + apiKeySecret).
-  twilioApiKeySid: text("twilio_api_key_sid"),
-  twilioApiKeySecretCiphertext: text("twilio_api_key_secret_ciphertext"),
-  twilioApiKeySecretIv: text("twilio_api_key_secret_iv"),
-  twilioApiKeySecretTag: text("twilio_api_key_secret_tag"),
-  voiceEnabled: boolean("voice_enabled").notNull().default(false),
+  // WhatsApp Business Calling API (voice call-event logging only — see modules/calls;
+  // we never answer calls or handle media, so this just gates whether we expect/show
+  // call-log activity for this number).
+  whatsappCallingEnabled: boolean("whatsapp_calling_enabled").notNull().default(false),
 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -206,42 +185,30 @@ export const messageTemplates = pgTable(
   }),
 );
 
-// ---------- Calls (Twilio Voice) ----------
+// ---------- Calls (WhatsApp Calling API — event log only, no media/answer) ----------
 export const calls = pgTable(
   "calls",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     numberId: uuid("number_id").notNull().references(() => phoneNumbers.id, { onDelete: "cascade" }),
-    twilioCallSid: text("twilio_call_sid"),
+    // Meta's call-event id (from the webhook payload), used to correlate the
+    // connect/terminate events belonging to the same call.
+    whatsappCallId: text("whatsapp_call_id"),
     direction: callDirectionEnum("direction").notNull(),
-    fromNumber: text("from_number").notNull(),
-    toNumber: text("to_number").notNull(),
+    fromWaId: text("from_wa_id").notNull(),
+    toWaId: text("to_wa_id").notNull(),
     teamId: uuid("team_id").references(() => teams.id, { onDelete: "set null" }),
-    agentId: uuid("agent_id").references(() => users.id, { onDelete: "set null" }),
-    status: callStatusEnum("status").notNull().default("queued"),
+    status: callStatusEnum("status").notNull().default("ringing"),
     durationSeconds: integer("duration_seconds"),
-    recordingSid: text("recording_sid"),
-    recordingLocalPath: text("recording_local_path"),
-    recordingDurationSeconds: integer("recording_duration_seconds"),
-    consentNoticePlayed: boolean("consent_notice_played").notNull().default(false),
     startedAt: timestamp("started_at", { withTimezone: true }),
-    answeredAt: timestamp("answered_at", { withTimezone: true }),
     endedAt: timestamp("ended_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    twilioCallSidUnique: uniqueIndex("calls_twilio_call_sid_unique").on(t.twilioCallSid),
+    whatsappCallIdUnique: uniqueIndex("calls_whatsapp_call_id_unique").on(t.whatsappCallId),
     numberIdx: index("calls_number_idx").on(t.numberId, t.createdAt),
   }),
 );
-
-export const consentLogs = pgTable("consent_logs", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  callId: uuid("call_id").notNull().references(() => calls.id, { onDelete: "cascade" }),
-  event: consentEventEnum("event").notNull(),
-  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
-  metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
-});
 
 // ---------- Audit & webhook forensics ----------
 export const auditLogs = pgTable("audit_logs", {
@@ -304,13 +271,7 @@ export const messagesRelations = relations(messages, ({ one }) => ({
   sentByUser: one(users, { fields: [messages.sentByUserId], references: [users.id] }),
 }));
 
-export const callsRelations = relations(calls, ({ one, many }) => ({
+export const callsRelations = relations(calls, ({ one }) => ({
   number: one(phoneNumbers, { fields: [calls.numberId], references: [phoneNumbers.id] }),
   team: one(teams, { fields: [calls.teamId], references: [teams.id] }),
-  agent: one(users, { fields: [calls.agentId], references: [users.id] }),
-  consentLogs: many(consentLogs),
-}));
-
-export const consentLogsRelations = relations(consentLogs, ({ one }) => ({
-  call: one(calls, { fields: [consentLogs.callId], references: [calls.id] }),
 }));

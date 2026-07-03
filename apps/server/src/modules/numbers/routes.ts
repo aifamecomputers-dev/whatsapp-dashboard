@@ -12,13 +12,7 @@ const numberInputSchema = z.object({
   whatsappPhoneNumberId: z.string().optional(),
   whatsappWabaId: z.string().optional(),
   whatsappAccessToken: z.string().optional(),
-  twilioAccountSid: z.string().optional(),
-  twilioAuthToken: z.string().optional(),
-  twilioPhoneSid: z.string().optional(),
-  twilioTwimlAppSid: z.string().optional(),
-  twilioApiKeySid: z.string().optional(),
-  twilioApiKeySecret: z.string().optional(),
-  voiceEnabled: z.boolean().optional(),
+  whatsappCallingEnabled: z.boolean().optional(),
   teamIds: z.array(z.string().uuid()).optional(),
 });
 
@@ -58,7 +52,7 @@ export default async function numbersRoutes(app: FastifyInstance) {
       action: "number.update",
       resourceType: "phone_number",
       resourceId: id,
-      metadata: { touchedSecrets: Boolean(body.data.whatsappAccessToken || body.data.twilioAuthToken) },
+      metadata: { touchedSecrets: Boolean(body.data.whatsappAccessToken) },
       ipAddress: request.ip,
     });
     return { number };

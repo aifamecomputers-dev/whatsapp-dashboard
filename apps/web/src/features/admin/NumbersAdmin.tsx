@@ -8,13 +8,7 @@ const emptyForm = {
   whatsappPhoneNumberId: "",
   whatsappWabaId: "",
   whatsappAccessToken: "",
-  twilioAccountSid: "",
-  twilioAuthToken: "",
-  twilioPhoneSid: "",
-  twilioTwimlAppSid: "",
-  twilioApiKeySid: "",
-  twilioApiKeySecret: "",
-  voiceEnabled: false,
+  whatsappCallingEnabled: false,
 };
 
 export default function NumbersAdmin() {
@@ -63,7 +57,7 @@ export default function NumbersAdmin() {
   }
 
   return (
-    <div className="grid grid-cols-2 gap-6">
+    <div className="grid grid-cols-1 gap-6 overflow-x-auto lg:grid-cols-2">
       <div>
         <h2 className="mb-3 text-sm font-semibold uppercase text-gray-500">Existing numbers</h2>
         <div className="space-y-3">
@@ -80,7 +74,7 @@ export default function NumbersAdmin() {
               </div>
               <div className="mt-2 flex gap-3 text-xs text-gray-500">
                 <span>WhatsApp: {n.whatsappStatus}</span>
-                <span>Voice: {n.voiceEnabled ? "enabled" : "disabled"}</span>
+                <span>Calling: {n.whatsappCallingEnabled ? "enabled" : "disabled"}</span>
                 <span>Teams: {n.teamIds.length}</span>
               </div>
             </div>
@@ -98,12 +92,6 @@ export default function NumbersAdmin() {
             ["whatsappPhoneNumberId", "WhatsApp phone_number_id"],
             ["whatsappWabaId", "WhatsApp WABA id"],
             ["whatsappAccessToken", "WhatsApp access token"],
-            ["twilioAccountSid", "Twilio Account SID"],
-            ["twilioAuthToken", "Twilio Auth Token"],
-            ["twilioPhoneSid", "Twilio Phone SID"],
-            ["twilioTwimlAppSid", "Twilio TwiML App SID"],
-            ["twilioApiKeySid", "Twilio API Key SID"],
-            ["twilioApiKeySecret", "Twilio API Key Secret"],
           ] as const
         ).map(([key, labelText]) => (
           <label key={key} className="block text-sm">
@@ -118,10 +106,10 @@ export default function NumbersAdmin() {
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
-            checked={form.voiceEnabled}
-            onChange={(e) => setForm((f) => ({ ...f, voiceEnabled: e.target.checked }))}
+            checked={form.whatsappCallingEnabled}
+            onChange={(e) => setForm((f) => ({ ...f, whatsappCallingEnabled: e.target.checked }))}
           />
-          Voice (Twilio) enabled
+          WhatsApp Calling enabled (call log only, no audio)
         </label>
         <div>
           <span className="mb-1 block text-sm text-gray-600">Teams with access</span>

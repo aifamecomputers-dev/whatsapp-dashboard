@@ -23,9 +23,6 @@ const envSchema = z.object({
   META_WEBHOOK_VERIFY_TOKEN: z.string().min(1),
   META_GRAPH_API_VERSION: z.string().default("v21.0"),
 
-  // Twilio account-level defaults; per-number overrides live encrypted in the DB
-  TWILIO_DEFAULT_ACCOUNT_SID: z.string().optional(),
-
   MEDIA_STORAGE_DRIVER: z.enum(["local", "s3"]).default("local"),
   MEDIA_STORAGE_LOCAL_PATH: z.string().default("./data/media"),
 });

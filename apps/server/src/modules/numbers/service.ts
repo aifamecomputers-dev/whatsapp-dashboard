@@ -12,13 +12,7 @@ export interface CreateNumberInput {
   whatsappPhoneNumberId?: string;
   whatsappWabaId?: string;
   whatsappAccessToken?: string;
-  twilioAccountSid?: string;
-  twilioAuthToken?: string;
-  twilioPhoneSid?: string;
-  twilioTwimlAppSid?: string;
-  twilioApiKeySid?: string;
-  twilioApiKeySecret?: string;
-  voiceEnabled?: boolean;
+  whatsappCallingEnabled?: boolean;
   teamIds?: string[];
 }
 
@@ -38,25 +32,7 @@ function toPublicNumber(row: typeof phoneNumbers.$inferSelect, teamIds: string[]
       : null,
     whatsappVerifiedName: row.whatsappVerifiedName,
     whatsappStatus: row.whatsappStatus,
-    twilioAccountSid: row.twilioAccountSid,
-    twilioAuthTokenMasked: row.twilioAuthTokenCiphertext
-      ? maskSecret(decryptSecret({
-          ciphertext: row.twilioAuthTokenCiphertext,
-          iv: row.twilioAuthTokenIv!,
-          tag: row.twilioAuthTokenTag!,
-        }))
-      : null,
-    twilioPhoneSid: row.twilioPhoneSid,
-    twilioTwimlAppSid: row.twilioTwimlAppSid,
-    twilioApiKeySid: row.twilioApiKeySid,
-    twilioApiKeySecretMasked: row.twilioApiKeySecretCiphertext
-      ? maskSecret(decryptSecret({
-          ciphertext: row.twilioApiKeySecretCiphertext,
-          iv: row.twilioApiKeySecretIv!,
-          tag: row.twilioApiKeySecretTag!,
-        }))
-      : null,
-    voiceEnabled: row.voiceEnabled,
+    whatsappCallingEnabled: row.whatsappCallingEnabled,
     teamIds,
   };
 }
@@ -93,8 +69,6 @@ export async function createNumber(db: Database, input: CreateNumberInput) {
   }
 
   const whatsappEnc = input.whatsappAccessToken ? encryptSecret(input.whatsappAccessToken) : null;
-  const twilioEnc = input.twilioAuthToken ? encryptSecret(input.twilioAuthToken) : null;
-  const apiKeyEnc = input.twilioApiKeySecret ? encryptSecret(input.twilioApiKeySecret) : null;
 
   const [row] = await db
     .insert(phoneNumbers)
@@ -107,17 +81,7 @@ export async function createNumber(db: Database, input: CreateNumberInput) {
       whatsappAccessTokenIv: whatsappEnc?.iv,
       whatsappAccessTokenTag: whatsappEnc?.tag,
       whatsappStatus: whatsappEnc ? "connected" : "pending",
-      twilioAccountSid: input.twilioAccountSid,
-      twilioAuthTokenCiphertext: twilioEnc?.ciphertext,
-      twilioAuthTokenIv: twilioEnc?.iv,
-      twilioAuthTokenTag: twilioEnc?.tag,
-      twilioPhoneSid: input.twilioPhoneSid,
-      twilioTwimlAppSid: input.twilioTwimlAppSid,
-      twilioApiKeySid: input.twilioApiKeySid,
-      twilioApiKeySecretCiphertext: apiKeyEnc?.ciphertext,
-      twilioApiKeySecretIv: apiKeyEnc?.iv,
-      twilioApiKeySecretTag: apiKeyEnc?.tag,
-      voiceEnabled: input.voiceEnabled ?? false,
+      whatsappCallingEnabled: input.whatsappCallingEnabled ?? false,
     })
     .returning();
 
@@ -141,23 +105,7 @@ export async function updateNumber(db: Database, numberId: string, input: Partia
     patch.whatsappAccessTokenTag = enc.tag;
     patch.whatsappStatus = "connected";
   }
-  if (input.twilioAccountSid !== undefined) patch.twilioAccountSid = input.twilioAccountSid;
-  if (input.twilioAuthToken) {
-    const enc = encryptSecret(input.twilioAuthToken);
-    patch.twilioAuthTokenCiphertext = enc.ciphertext;
-    patch.twilioAuthTokenIv = enc.iv;
-    patch.twilioAuthTokenTag = enc.tag;
-  }
-  if (input.twilioPhoneSid !== undefined) patch.twilioPhoneSid = input.twilioPhoneSid;
-  if (input.twilioTwimlAppSid !== undefined) patch.twilioTwimlAppSid = input.twilioTwimlAppSid;
-  if (input.twilioApiKeySid !== undefined) patch.twilioApiKeySid = input.twilioApiKeySid;
-  if (input.twilioApiKeySecret) {
-    const enc = encryptSecret(input.twilioApiKeySecret);
-    patch.twilioApiKeySecretCiphertext = enc.ciphertext;
-    patch.twilioApiKeySecretIv = enc.iv;
-    patch.twilioApiKeySecretTag = enc.tag;
-  }
-  if (input.voiceEnabled !== undefined) patch.voiceEnabled = input.voiceEnabled;
+  if (input.whatsappCallingEnabled !== undefined) patch.whatsappCallingEnabled = input.whatsappCallingEnabled;
 
   const [row] = await db.update(phoneNumbers).set(patch).where(eq(phoneNumbers.id, numberId)).returning();
   if (!row) throw new NotFoundError("Phone number not found");
@@ -199,41 +147,6 @@ export async function getDecryptedWhatsappCredentials(
       iv: row.whatsappAccessTokenIv,
       tag: row.whatsappAccessTokenTag,
     }),
-  };
-}
-
-/** Internal helper for the Twilio integration layer — never exposed over HTTP. */
-export async function getDecryptedTwilioCredentials(
-  db: Database,
-  numberId: string,
-): Promise<{
-  accountSid: string;
-  authToken: string;
-  twimlAppSid: string | null;
-  apiKeySid: string | null;
-  apiKeySecret: string | null;
-}> {
-  const row = await getNumberOr404(db, numberId);
-  if (!row.twilioAccountSid || !row.twilioAuthTokenCiphertext || !row.twilioAuthTokenIv || !row.twilioAuthTokenTag) {
-    throw new ValidationError("This number is not configured for Twilio voice");
-  }
-  return {
-    accountSid: row.twilioAccountSid,
-    authToken: decryptSecret({
-      ciphertext: row.twilioAuthTokenCiphertext,
-      iv: row.twilioAuthTokenIv,
-      tag: row.twilioAuthTokenTag,
-    }),
-    twimlAppSid: row.twilioTwimlAppSid,
-    apiKeySid: row.twilioApiKeySid,
-    apiKeySecret:
-      row.twilioApiKeySecretCiphertext && row.twilioApiKeySecretIv && row.twilioApiKeySecretTag
-        ? decryptSecret({
-            ciphertext: row.twilioApiKeySecretCiphertext,
-            iv: row.twilioApiKeySecretIv,
-            tag: row.twilioApiKeySecretTag,
-          })
-        : null,
   };
 }
 

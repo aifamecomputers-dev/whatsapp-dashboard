@@ -2,11 +2,18 @@
 
 [![CI](https://github.com/aifamecomputers-dev/whatsapp-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/aifamecomputers-dev/whatsapp-dashboard/actions/workflows/ci.yml)
 
-A self-hosted web dashboard for managing multiple WhatsApp Business numbers (messaging,
-via the official Meta WhatsApp Cloud API) alongside real voice call logging and recording
-(via Twilio Voice, since WhatsApp itself exposes no call-log or recording API). Built for
-a single business running several numbers across multiple internal teams, with real-time
-synced messages and calls pushed to the browser over Socket.IO.
+A self-hosted web dashboard for managing multiple WhatsApp Business numbers — messaging via
+the official Meta WhatsApp Cloud API, plus a call activity log via Meta's WhatsApp Business
+Calling API. Built for a single business running several numbers across multiple internal
+teams, with real-time synced messages and call events pushed to the browser over Socket.IO.
+
+**On calling, specifically:** this dashboard logs call activity (who called, when, duration,
+outcome) but does not answer calls or carry audio. WhatsApp's Calling API requires the
+receiving side to implement its own WebRTC/SDP media handling to actually join a call —
+there is no simple "answer" button at the API level, unlike a phone system. Building that
+media/answer layer was explicitly descoped in favor of just logging call activity; see
+"What's implemented" below. Native WhatsApp video calling isn't available through any
+official channel as of this writing (Meta lists it as an unreleased roadmap item).
 
 See `.claude/plans` (or ask the assistant) for the original architecture plan this was
 built from. This document covers what's here and how to run it.
@@ -15,20 +22,20 @@ built from. This document covers what's here and how to run it.
 
 - WhatsApp Cloud API messaging: inbound/outbound text + template messages, media
   download/storage, delivery status tracking, 24h session-window enforcement, template
-  catalog sync.
-- Twilio Voice: inbound calls ring eligible agents' browsers, outbound click-to-call,
-  mandatory recording-consent announcement, recordings downloaded and stored locally,
-  consent audit log.
+  catalog sync. Verified end-to-end against real Meta infrastructure (real inbound message
+  → real outbound reply → delivery/read receipts).
+- WhatsApp Calling API call log: subscribes to Meta's `calls` webhook field and records
+  direction, counterpart, status, and duration as history. No answer/media/recording —
+  see the note above.
 - Multi-number, multi-team RBAC: numbers are only visible to teams explicitly granted
   access; roles are `team_admin` / `agent` / `viewer`, enforced server-side on every route
   and on Socket.IO room joins (not just hidden in the UI).
 - Real-time updates: Postgres-backed webhook events → BullMQ worker → Socket.IO
   (`@socket.io/redis-adapter` + `@socket.io/redis-emitter`) → browser, with no polling.
-- Security: HMAC signature verification on both Meta and Twilio webhooks (before any DB
-  write), AES-256-GCM encryption of per-number credentials at rest, rate limiting on
-  webhooks and login, audit logging of sensitive actions (credential edits, role changes,
-  recording playback).
-- 25 unit tests covering signature verification, encryption round-trips, and session-window
+- Security: HMAC signature verification on Meta webhooks (before any DB write), AES-256-GCM
+  encryption of per-number credentials at rest, rate limiting on webhooks and login, audit
+  logging of sensitive actions (credential edits, role changes).
+- 18 unit tests covering signature verification, encryption round-trips, and session-window
   logic — the full production build (`npm run build`) compiles clean end-to-end.
 
 **Simplification vs. the original plan:** the frontend uses plain Tailwind utility classes
@@ -36,14 +43,22 @@ rather than a generated shadcn/ui component library (shadcn's CLI wasn't availab
 build environment). Swapping in shadcn/ui components later is a styling-layer change only;
 no API or data-flow changes would be needed.
 
+**Dropped from the original plan:** Twilio Voice (call recording, browser click-to-call,
+consent-announcement flow) was removed in favor of Meta's native WhatsApp Calling API, per
+an explicit decision that real WhatsApp-branded call activity mattered more than recording.
+If recording ever becomes a hard requirement again, re-adding Twilio Voice alongside this is
+the fastest path back (it was previously built and working — see git history) — building a
+media-handling layer directly on the Meta Calling API's raw WebRTC/SDP signaling would be
+substantially more work.
+
 **Not implemented / left for you:** Postgres backup automation, S3/MinIO media storage
 (the `MediaStorage` interface in `apps/server/src/storage/mediaStorage.ts` is written so
 this is a config change, not a rewrite), and horizontal-scaling load testing.
 
 ## Prerequisites you must complete outside this repo
 
-The code is complete and builds/boots correctly, but **cannot send a real message or take
-a real call until you've done this setup** — none of it can be done by an AI coding agent:
+The code is complete and builds/boots correctly, but **cannot send a real message or log a
+real call until you've done this setup** — none of it can be done by an AI coding agent:
 
 1. **Meta Business Manager account + business verification** (can take several days,
    sometimes requires documents).
@@ -56,21 +71,19 @@ a real call until you've done this setup** — none of it can be done by an AI c
    usable in production.
 5. Submit your message templates for Meta approval (required to message a customer
    outside the 24h session window). Approval can take hours to about a day.
-6. Create a **Twilio account**, purchase/port voice-capable numbers, and confirm with
-   Twilio (support ticket if needed) that a number simultaneously registered on WhatsApp
-   can still carry Twilio inbound/outbound voice — this is a per-number check, not
-   guaranteed.
-7. For each Twilio-voice-enabled number: create a **TwiML App** pointing its Voice URL at
-   `POST {PUBLIC_BASE_URL}/webhooks/twilio/voice/outbound`, and an **API Key** (Twilio
-   Console → Account → API keys & tokens) — the Voice SDK access token is signed with the
-   API Key, not the Auth Token.
-8. A **real domain + DNS** you control, for Caddy's automatic HTTPS. Both Meta and Twilio
-   reject non-HTTPS webhook URLs in production.
-9. **Legal/compliance review** of the call-recording consent announcement wording for
-   every jurisdiction the business operates in. The code plays a consent notice before
-   every recorded call and logs that it did (`consent_logs` table) — but the actual wording
-   in `apps/server/src/integrations/twilio/client.ts` (`DEFAULT_CONSENT_TEXT`) is a
-   placeholder, not legal advice.
+6. **Subscribe your app to the WABA's webhooks** — this is easy to miss. Verifying the
+   callback URL alone is not enough; a separate `subscribed_apps` call is required, or
+   nothing (messages or calls) will ever actually arrive:
+   ```bash
+   curl -X POST "https://graph.facebook.com/v21.0/{waba-id}/subscribed_apps" \
+     -H "Authorization: Bearer {your-system-user-token}"
+   ```
+   Verify with a `GET` on the same URL — your app should appear in `data[]`.
+7. Enable **Calling** on each number you want call-log activity for (WhatsApp Manager →
+   Phone Numbers → your number → Calling settings), and subscribe your app to the `calls`
+   webhook field in addition to `messages` (App Dashboard → Webhooks).
+8. A **real domain + DNS** you control, for Caddy's automatic HTTPS in production. Meta
+   rejects non-HTTPS webhook URLs.
 
 ## Local development
 
@@ -102,21 +115,22 @@ have them from the prerequisites above.
 
 ### Receiving real webhooks locally
 
-Meta and Twilio both need a public HTTPS URL to deliver webhooks to. Use a tunnel:
+Meta needs a public HTTPS URL to deliver webhooks to. Use a tunnel:
 
 ```bash
 ngrok http 4000
 ```
 
-Then set the tunnel URL as:
-- Meta App → WhatsApp → Configuration → Webhook URL: `https://<tunnel>/webhooks/meta`
-  (verify token = your `META_WEBHOOK_VERIFY_TOKEN`)
-- Twilio number's Voice webhook (or the TwiML App's Voice URL, for outbound):
-  `https://<tunnel>/webhooks/twilio/voice/inbound`
+Then in Meta App Dashboard → WhatsApp → Configuration:
+- Webhook URL: `https://<tunnel>/webhooks/meta`, verify token = your `META_WEBHOOK_VERIFY_TOKEN`
+- Subscribe to the `messages` field (and `calls`, if testing call logging)
+- **Also run the `subscribed_apps` POST from the prerequisites section above** — verifying
+  the callback URL does not itself subscribe your app to the WABA's events; this is the
+  step that's easy to miss and silently results in zero webhooks ever arriving despite the
+  URL showing as "verified."
 
-Also set `PUBLIC_BASE_URL` in `.env` to the tunnel URL while testing — Twilio signature
-verification reconstructs the exact URL it was called with, so a mismatch here will cause
-every Twilio webhook to be rejected as unsigned.
+ngrok's free tier issues a new random URL on every restart — update the webhook URL (and
+`PUBLIC_BASE_URL` in `.env`) each time.
 
 ## Production deployment
 
@@ -130,8 +144,8 @@ traffic. `caddy` requests a Let's Encrypt certificate for `PUBLIC_DOMAIN` automa
 DNS must already point at this host before starting the stack.
 
 Services: `postgres`, `redis`, `server-web` (API + Socket.IO + webhook ingestion),
-`server-worker` (BullMQ processing — DB writes, media/recording downloads), `web` (built
-React app served by nginx), `caddy` (TLS + reverse proxy).
+`server-worker` (BullMQ processing — DB writes, media downloads), `web` (built React app
+served by nginx), `caddy` (TLS + reverse proxy).
 
 ## Testing
 
@@ -139,11 +153,11 @@ React app served by nginx), `caddy` (TLS + reverse proxy).
 npm run test -w apps/server
 ```
 
-25 unit tests: HMAC signature verification for both Meta (`X-Hub-Signature-256` over raw
-bytes) and Twilio (`X-Twilio-Signature` over reconstructed params) webhooks, AES-256-GCM
-encrypt/decrypt round-trips, and the 24-hour customer-service session window boundary
-logic. These were written first, per the principle that webhook signature checks gate
-every downstream data-corruption risk in the system.
+18 unit tests: HMAC signature verification for Meta's `X-Hub-Signature-256` (computed over
+raw, unparsed request bytes — this webhook route captures the raw body specifically for
+this check), AES-256-GCM encrypt/decrypt round-trips, and the 24-hour customer-service
+session window boundary logic. These were written first, per the principle that webhook
+signature checks gate every downstream data-corruption risk in the system.
 
 Not included (would need a disposable Postgres/Redis in CI): Fastify `inject()`
 integration tests posting fixture webhook payloads and asserting the resulting DB rows +
@@ -157,9 +171,10 @@ low-branching and unit-testable once a test Postgres container is wired into CI.
 ```
 apps/server/src/
   modules/           REST routes + business logic, one folder per domain concept
-  modules/webhooks/   Meta + Twilio webhook ingestion (signature verify, then enqueue)
-  integrations/       Thin clients for the Graph API and Twilio SDK
-  queue/               BullMQ queues + the processors that do the real webhook work
+  modules/webhooks/   Meta webhook ingestion (signature verify, then enqueue)
+  integrations/       Thin client for the Graph API
+  queue/               BullMQ queue + the processor that does the real webhook work
+                        (message writes, media downloads, call-event logging)
   realtime/            Socket.IO server (server-web) and the redis-emitter (worker)
   lib/                 crypto.ts (token encryption), rbac.ts (single source of truth
                         for "who can see number X", used by both REST and sockets)

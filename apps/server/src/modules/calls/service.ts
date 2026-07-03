@@ -1,24 +1,8 @@
 import { desc, eq } from "drizzle-orm";
-import type { CallDirection, CallStatus, ConsentEvent } from "@whatsapp-dashboard/shared";
+import type { CallDirection, CallStatus } from "@whatsapp-dashboard/shared";
 import type { Database } from "../../db/client.js";
-import { calls, consentLogs } from "../../db/schema.js";
+import { calls } from "../../db/schema.js";
 import { NotFoundError } from "../../lib/errors.js";
-
-/**
- * Twilio <Client> identities are scoped per-number (`{numberId}:{userId}`) rather than
- * just the raw user id, because one agent can be eligible to receive calls for several
- * numbers that may sit on different Twilio subaccounts/TwiML Apps — the identity has to
- * disambiguate which number's Voice SDK registration a given call should ring.
- */
-export function voiceIdentity(numberId: string, userId: string): string {
-  return `${numberId}__${userId}`;
-}
-
-export function parseVoiceIdentity(identity: string): { numberId: string; userId: string } | null {
-  const [numberId, userId] = identity.split("__");
-  if (!numberId || !userId) return null;
-  return { numberId, userId };
-}
 
 export async function listCallsForNumber(db: Database, numberId: string) {
   return db.select().from(calls).where(eq(calls.numberId, numberId)).orderBy(desc(calls.createdAt));
@@ -30,83 +14,55 @@ export async function getCallOr404(db: Database, callId: string) {
   return row;
 }
 
-export async function getCallByTwilioSid(db: Database, twilioCallSid: string) {
-  const [row] = await db.select().from(calls).where(eq(calls.twilioCallSid, twilioCallSid)).limit(1);
+export async function getCallByWhatsappCallId(db: Database, whatsappCallId: string) {
+  const [row] = await db.select().from(calls).where(eq(calls.whatsappCallId, whatsappCallId)).limit(1);
   return row ?? null;
 }
 
-export interface CreateCallInput {
+export interface UpsertCallEventInput {
   numberId: string;
-  twilioCallSid: string;
+  whatsappCallId: string;
   direction: CallDirection;
-  fromNumber: string;
-  toNumber: string;
+  fromWaId: string;
+  toWaId: string;
   teamId?: string | null;
-  agentId?: string | null;
   status: CallStatus;
+  durationSeconds?: number;
 }
 
-export async function createCall(db: Database, input: CreateCallInput) {
+/**
+ * A call arrives to us as a sequence of events (e.g. ringing → terminated) that
+ * share the same whatsapp_call_id — this upserts the log row so later events
+ * update status/duration on the same record instead of creating duplicates.
+ */
+export async function upsertCallEvent(db: Database, input: UpsertCallEventInput) {
+  const patch: Record<string, unknown> = {
+    numberId: input.numberId,
+    direction: input.direction,
+    fromWaId: input.fromWaId,
+    toWaId: input.toWaId,
+    status: input.status,
+  };
+  if (input.teamId !== undefined) patch.teamId = input.teamId;
+  if (input.durationSeconds !== undefined) patch.durationSeconds = input.durationSeconds;
+  if (input.status === "ringing") patch.startedAt = new Date();
+  if (["missed", "rejected", "terminated", "failed"].includes(input.status)) patch.endedAt = new Date();
+
   const [row] = await db
     .insert(calls)
     .values({
       numberId: input.numberId,
-      twilioCallSid: input.twilioCallSid,
+      whatsappCallId: input.whatsappCallId,
       direction: input.direction,
-      fromNumber: input.fromNumber,
-      toNumber: input.toNumber,
+      fromWaId: input.fromWaId,
+      toWaId: input.toWaId,
       teamId: input.teamId ?? null,
-      agentId: input.agentId ?? null,
       status: input.status,
-      startedAt: new Date(),
+      durationSeconds: input.durationSeconds,
+      startedAt: input.status === "ringing" ? new Date() : undefined,
+      endedAt: ["missed", "rejected", "terminated", "failed"].includes(input.status) ? new Date() : undefined,
     })
-    .onConflictDoNothing({ target: calls.twilioCallSid })
+    .onConflictDoUpdate({ target: calls.whatsappCallId, set: patch })
     .returning();
-  return row ?? (await getCallByTwilioSid(db, input.twilioCallSid));
-}
-
-export async function updateCallStatus(
-  db: Database,
-  twilioCallSid: string,
-  status: CallStatus,
-  durationSeconds?: number,
-) {
-  const patch: Record<string, unknown> = { status };
-  if (durationSeconds !== undefined) patch.durationSeconds = durationSeconds;
-  if (status === "in-progress") patch.answeredAt = new Date();
-  if (["completed", "busy", "failed", "no-answer", "canceled"].includes(status)) patch.endedAt = new Date();
-
-  const [row] = await db.update(calls).set(patch).where(eq(calls.twilioCallSid, twilioCallSid)).returning();
-  return row ?? null;
-}
-
-export async function attachRecording(
-  db: Database,
-  twilioCallSid: string,
-  input: { recordingSid: string; recordingLocalPath: string; recordingDurationSeconds: number },
-) {
-  const [row] = await db
-    .update(calls)
-    .set({
-      recordingSid: input.recordingSid,
-      recordingLocalPath: input.recordingLocalPath,
-      recordingDurationSeconds: input.recordingDurationSeconds,
-    })
-    .where(eq(calls.twilioCallSid, twilioCallSid))
-    .returning();
-  return row ?? null;
-}
-
-export async function markConsentNoticePlayed(db: Database, callId: string): Promise<void> {
-  await db.update(calls).set({ consentNoticePlayed: true }).where(eq(calls.id, callId));
-  await recordConsentEvent(db, callId, "notice_played");
-}
-
-export async function recordConsentEvent(
-  db: Database,
-  callId: string,
-  event: ConsentEvent,
-  metadata: Record<string, unknown> = {},
-): Promise<void> {
-  await db.insert(consentLogs).values({ callId, event, metadata });
+  return row;
 }

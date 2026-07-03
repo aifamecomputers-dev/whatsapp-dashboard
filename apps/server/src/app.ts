@@ -14,7 +14,6 @@ import messagesRoutes from "./modules/messages/routes.js";
 import templatesRoutes from "./modules/templates/routes.js";
 import callsRoutes from "./modules/calls/routes.js";
 import metaWebhookRoutes from "./modules/webhooks/meta.routes.js";
-import twilioWebhookRoutes from "./modules/webhooks/twilio.routes.js";
 
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
@@ -43,7 +42,6 @@ export async function buildApp(): Promise<FastifyInstance> {
   // their prefix, so they must be registered as encapsulated plugins (Fastify
   // keeps content-type parser overrides scoped to the registering context).
   await app.register(metaWebhookRoutes);
-  await app.register(twilioWebhookRoutes);
 
   await app.register(authRoutes);
   await app.register(usersRoutes);

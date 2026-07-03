@@ -1,5 +1,5 @@
 {
-  "id": "388bc814-f58d-4377-b905-d6f1c303315c",
+  "id": "067e08fc-e2c6-4c92-adf9-2c664fc7c0c6",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -99,8 +99,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "twilio_call_sid": {
-          "name": "twilio_call_sid",
+        "whatsapp_call_id": {
+          "name": "whatsapp_call_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -112,14 +112,14 @@
           "primaryKey": false,
           "notNull": true
         },
-        "from_number": {
-          "name": "from_number",
+        "from_wa_id": {
+          "name": "from_wa_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "to_number": {
-          "name": "to_number",
+        "to_wa_id": {
+          "name": "to_wa_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true
@@ -130,19 +130,13 @@
           "primaryKey": false,
           "notNull": false
         },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "status": {
           "name": "status",
           "type": "call_status",
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": true,
-          "default": "'queued'"
+          "default": "'ringing'"
         },
         "duration_seconds": {
           "name": "duration_seconds",
@@ -150,39 +144,8 @@
           "primaryKey": false,
           "notNull": false
         },
-        "recording_sid": {
-          "name": "recording_sid",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "recording_local_path": {
-          "name": "recording_local_path",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "recording_duration_seconds": {
-          "name": "recording_duration_seconds",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "consent_notice_played": {
-          "name": "consent_notice_played",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "started_at": {
           "name": "started_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "answered_at": {
-          "name": "answered_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
@@ -202,11 +165,11 @@
         }
       },
       "indexes": {
-        "calls_twilio_call_sid_unique": {
-          "name": "calls_twilio_call_sid_unique",
+        "calls_whatsapp_call_id_unique": {
+          "name": "calls_whatsapp_call_id_unique",
           "columns": [
             {
-              "expression": "twilio_call_sid",
+              "expression": "whatsapp_call_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -264,80 +227,6 @@
             "id"
           ],
           "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "calls_agent_id_users_id_fk": {
-          "name": "calls_agent_id_users_id_fk",
-          "tableFrom": "calls",
-          "tableTo": "users",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.consent_logs": {
-      "name": "consent_logs",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "call_id": {
-          "name": "call_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "event": {
-          "name": "event",
-          "type": "consent_event",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "occurred_at": {
-          "name": "occurred_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "metadata": {
-          "name": "metadata",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "consent_logs_call_id_calls_id_fk": {
-          "name": "consent_logs_call_id_calls_id_fk",
-          "tableFrom": "consent_logs",
-          "tableTo": "calls",
-          "columnsFrom": [
-            "call_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -888,68 +777,8 @@
           "notNull": true,
           "default": "'pending'"
         },
-        "twilio_account_sid": {
-          "name": "twilio_account_sid",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "twilio_auth_token_ciphertext": {
-          "name": "twilio_auth_token_ciphertext",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "twilio_auth_token_iv": {
-          "name": "twilio_auth_token_iv",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "twilio_auth_token_tag": {
-          "name": "twilio_auth_token_tag",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "twilio_phone_sid": {
-          "name": "twilio_phone_sid",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "twilio_twiml_app_sid": {
-          "name": "twilio_twiml_app_sid",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "twilio_api_key_sid": {
-          "name": "twilio_api_key_sid",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "twilio_api_key_secret_ciphertext": {
-          "name": "twilio_api_key_secret_ciphertext",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "twilio_api_key_secret_iv": {
-          "name": "twilio_api_key_secret_iv",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "twilio_api_key_secret_tag": {
-          "name": "twilio_api_key_secret_tag",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "voice_enabled": {
-          "name": "voice_enabled",
+        "whatsapp_calling_enabled": {
+          "name": "whatsapp_calling_enabled",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
@@ -1343,23 +1172,11 @@
       "name": "call_status",
       "schema": "public",
       "values": [
-        "queued",
         "ringing",
-        "in-progress",
-        "completed",
-        "busy",
-        "failed",
-        "no-answer",
-        "canceled"
-      ]
-    },
-    "public.consent_event": {
-      "name": "consent_event",
-      "schema": "public",
-      "values": [
-        "notice_played",
-        "recording_started",
-        "recording_stopped"
+        "missed",
+        "rejected",
+        "terminated",
+        "failed"
       ]
     },
     "public.conversation_status": {
@@ -1427,8 +1244,7 @@
       "name": "webhook_source",
       "schema": "public",
       "values": [
-        "meta",
-        "twilio"
+        "meta"
       ]
     },
     "public.whatsapp_status": {

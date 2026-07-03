@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { SOCKET_EVENTS } from "@whatsapp-dashboard/shared";
+import { SOCKET_EVENTS, type CallStatus } from "@whatsapp-dashboard/shared";
 import type { Job } from "bullmq";
 import { db } from "../../db/client.js";
 import { webhookEvents } from "../../db/schema.js";
@@ -8,6 +8,8 @@ import { downloadMedia } from "../../integrations/whatsapp/client.js";
 import { getDecryptedWhatsappCredentials, findNumberByWhatsappPhoneNumberId } from "../../modules/numbers/service.js";
 import { findOrCreateConversation, touchCustomerActivity } from "../../modules/conversations/service.js";
 import { attachDownloadedMedia, recordInboundMessage, updateMessageStatusByWaId } from "../../modules/messages/service.js";
+import { getTeamsForNumber } from "../../lib/rbac.js";
+import { upsertCallEvent } from "../../modules/calls/service.js";
 import { mediaStorage } from "../../storage/mediaStorage.js";
 import { emitToNumber } from "../../realtime/publisher.js";
 import type { WebhookJobData } from "../queues.js";
@@ -36,11 +38,33 @@ interface MetaContact {
   profile?: { name?: string };
 }
 
+/**
+ * The exact shape of WhatsApp Calling API webhook events isn't fully covered in
+ * Meta's public docs at the time this was written, so this is intentionally
+ * permissive: every plausible field name is optional, and handleCallEvents logs
+ * a warning (with the full raw payload already preserved in webhook_events) if
+ * it can't extract the minimum needed to log a call. If a real event doesn't
+ * parse, inspect `SELECT raw_payload FROM webhook_events WHERE event_type='calls'
+ * ORDER BY received_at DESC LIMIT 1` and adjust this interface/mapping to match.
+ */
+interface MetaCallEvent {
+  id?: string;
+  call_id?: string;
+  event?: string;
+  status?: string;
+  direction?: string;
+  from?: string;
+  to?: string;
+  duration?: number;
+  timestamp?: string;
+}
+
 interface MetaChangeValue {
   metadata?: { phone_number_id?: string };
   contacts?: MetaContact[];
   messages?: MetaMessage[];
   statuses?: MetaStatus[];
+  calls?: MetaCallEvent[];
 }
 
 interface MetaEnvelope {
@@ -136,6 +160,63 @@ async function handleStatuses(value: MetaChangeValue) {
   }
 }
 
+const CALL_STATUS_BY_EVENT: Record<string, CallStatus> = {
+  connect: "ringing",
+  ringing: "ringing",
+  terminate: "terminated",
+  terminated: "terminated",
+  missed: "missed",
+  reject: "rejected",
+  rejected: "rejected",
+  failed: "failed",
+};
+
+/**
+ * Logs call activity only — we never answer/join the call (no WebRTC/SDP media
+ * handling), so there is nothing to bridge to an agent. This just gives visibility
+ * into who called, when, and the outcome.
+ */
+async function handleCallEvents(value: MetaChangeValue) {
+  const phoneNumberId = value.metadata?.phone_number_id;
+  if (!phoneNumberId || !value.calls?.length) return;
+
+  const number = await findNumberByWhatsappPhoneNumberId(db, phoneNumberId);
+  if (!number) {
+    logger.warn({ phoneNumberId }, "WhatsApp call event for unknown phone_number_id");
+    return;
+  }
+
+  const teamIds = await getTeamsForNumber(db, number.id);
+
+  for (const call of value.calls) {
+    const whatsappCallId = call.id ?? call.call_id;
+    const eventKey = (call.event ?? call.status ?? "").toLowerCase();
+    const status = CALL_STATUS_BY_EVENT[eventKey];
+
+    if (!whatsappCallId || !status) {
+      logger.warn({ numberId: number.id, rawEvent: call }, "Unrecognized WhatsApp call event shape — see comment on MetaCallEvent");
+      continue;
+    }
+
+    const direction = call.direction?.toLowerCase().includes("business") ? "outbound" : "inbound";
+    const fromWaId = call.from ?? (direction === "inbound" ? "unknown" : phoneNumberId);
+    const toWaId = call.to ?? (direction === "inbound" ? phoneNumberId : "unknown");
+
+    const row = await upsertCallEvent(db, {
+      numberId: number.id,
+      whatsappCallId,
+      direction,
+      fromWaId,
+      toWaId,
+      teamId: teamIds[0] ?? null,
+      status,
+      durationSeconds: call.duration,
+    });
+
+    emitToNumber(number.id, SOCKET_EVENTS.CALL_STATUS, { callId: row.id, status });
+  }
+}
+
 export async function processMetaEvent(job: Job<WebhookJobData>): Promise<void> {
   const [event] = await db.select().from(webhookEvents).where(eq(webhookEvents.id, job.data.webhookEventId)).limit(1);
   if (!event) {
@@ -150,6 +231,7 @@ export async function processMetaEvent(job: Job<WebhookJobData>): Promise<void> 
         if (!change.value) continue;
         await handleInboundMessages(change.value);
         await handleStatuses(change.value);
+        await handleCallEvents(change.value);
       }
     }
     await db

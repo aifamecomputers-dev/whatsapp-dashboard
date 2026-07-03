@@ -151,7 +151,7 @@ export default function InboxPage() {
   }
 
   return (
-    <div className="grid h-full grid-cols-[320px_1fr]">
+    <div className="grid h-full grid-cols-[320px_1fr] overflow-x-auto">
       <ConversationList
         conversations={conversations}
         activeId={conversationId}
