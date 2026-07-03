@@ -9,3 +9,4 @@ data/media/*
 .DS_Store
 *.log
 coverage/
+RESUME.md
