@@ -37,7 +37,7 @@ export default function UsersAdmin() {
   }
 
   return (
-    <div className="grid grid-cols-2 gap-6">
+    <div className="grid grid-cols-1 gap-6 overflow-x-auto lg:grid-cols-2">
       <div>
         <h2 className="mb-3 text-sm font-semibold uppercase text-gray-500">Users</h2>
         <ul className="space-y-2">

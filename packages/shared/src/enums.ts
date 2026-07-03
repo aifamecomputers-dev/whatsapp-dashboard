@@ -29,22 +29,13 @@ export type MessageStatus = (typeof MESSAGE_STATUSES)[number];
 export const CALL_DIRECTIONS = ["inbound", "outbound"] as const;
 export type CallDirection = (typeof CALL_DIRECTIONS)[number];
 
-export const CALL_STATUSES = [
-  "queued",
-  "ringing",
-  "in-progress",
-  "completed",
-  "busy",
-  "failed",
-  "no-answer",
-  "canceled",
-] as const;
+// WhatsApp Calling API call-event log only — we never answer/join a call (no
+// WebRTC media handling), so there's no "in-progress"/"completed" state on our
+// side, just the outcome of ringing.
+export const CALL_STATUSES = ["ringing", "missed", "rejected", "terminated", "failed"] as const;
 export type CallStatus = (typeof CALL_STATUSES)[number];
 
-export const CONSENT_EVENTS = ["notice_played", "recording_started", "recording_stopped"] as const;
-export type ConsentEvent = (typeof CONSENT_EVENTS)[number];
-
-export const WEBHOOK_SOURCES = ["meta", "twilio"] as const;
+export const WEBHOOK_SOURCES = ["meta"] as const;
 export type WebhookSource = (typeof WEBHOOK_SOURCES)[number];
 
 export const WEBHOOK_EVENT_STATUSES = ["pending", "processed", "failed"] as const;
@@ -53,8 +44,6 @@ export type WebhookEventStatus = (typeof WEBHOOK_EVENT_STATUSES)[number];
 export const SOCKET_EVENTS = {
   MESSAGE_NEW: "message:new",
   MESSAGE_STATUS: "message:status",
-  CALL_NEW: "call:new",
   CALL_STATUS: "call:status",
-  CALL_RECORDING_READY: "call:recording_ready",
 } as const;
 export type SocketEventName = (typeof SOCKET_EVENTS)[keyof typeof SOCKET_EVENTS];

@@ -13,7 +13,7 @@ export interface EncryptedPayload {
 }
 
 /**
- * Encrypts a secret (e.g. a per-number WhatsApp or Twilio credential) for storage.
+ * Encrypts a secret (e.g. a per-number WhatsApp access token) for storage.
  * Never call this on values that will be echoed back to the browser in plaintext.
  */
 export function encryptSecret(plaintext: string): EncryptedPayload {

@@ -35,7 +35,7 @@ export interface PhoneNumberDTO {
   displayPhoneNumber: string;
   whatsappStatus: WhatsappStatus;
   whatsappVerifiedName: string | null;
-  voiceEnabled: boolean;
+  whatsappCallingEnabled: boolean;
   teamIds: string[];
 }
 
@@ -80,15 +80,11 @@ export interface CallDTO {
   id: string;
   numberId: string;
   direction: CallDirection;
-  fromNumber: string;
-  toNumber: string;
+  fromWaId: string;
+  toWaId: string;
   teamId: string | null;
-  agentId: string | null;
   status: CallStatus;
   durationSeconds: number | null;
-  hasRecording: boolean;
-  recordingDurationSeconds: number | null;
-  consentNoticePlayed: boolean;
   startedAt: string | null;
   endedAt: string | null;
 }

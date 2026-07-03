@@ -15,7 +15,6 @@ const defaultJobOptions = {
 // Lazily constructed so importing this module doesn't open a Redis connection
 // (useful for unit tests that import route modules without a running Redis).
 let metaQueue: Queue<WebhookJobData> | null = null;
-let twilioQueue: Queue<WebhookJobData> | null = null;
 
 export function getMetaEventQueue(): Queue<WebhookJobData> {
   if (!metaQueue) {
@@ -25,14 +24,4 @@ export function getMetaEventQueue(): Queue<WebhookJobData> {
     });
   }
   return metaQueue;
-}
-
-export function getTwilioEventQueue(): Queue<WebhookJobData> {
-  if (!twilioQueue) {
-    twilioQueue = new Queue<WebhookJobData>("twilio-events", {
-      connection: createRedisConnection(),
-      defaultJobOptions,
-    });
-  }
-  return twilioQueue;
 }

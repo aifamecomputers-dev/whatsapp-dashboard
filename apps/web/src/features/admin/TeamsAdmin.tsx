@@ -72,7 +72,7 @@ export default function TeamsAdmin() {
         </button>
       </form>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 overflow-x-auto md:grid-cols-2">
         {teams.map((team) => (
           <div key={team.id} className="rounded border border-gray-200 p-4">
             <h3 className="mb-2 font-medium">{team.name}</h3>

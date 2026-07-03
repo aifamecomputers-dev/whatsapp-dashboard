@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { TeamRole } from "@whatsapp-dashboard/shared";
 import type { Database } from "../db/client.js";
 import { numberTeamAccess, teamMembers, users } from "../db/schema.js";
@@ -88,24 +88,13 @@ export function requireSuperAdmin(user: AuthenticatedUser): void {
   }
 }
 
-/** Resolves which teams have visibility of a given number (used to route inbound Twilio calls to agents). */
+/** Resolves which teams have visibility of a given number (used to tag call-log rows with a team). */
 export async function getTeamsForNumber(db: Database, numberId: string): Promise<string[]> {
   const rows = await db
     .select({ teamId: numberTeamAccess.teamId })
     .from(numberTeamAccess)
     .where(eq(numberTeamAccess.numberId, numberId));
   return rows.map((r) => r.teamId);
-}
-
-/** Resolves the user ids of agents/team_admins (not viewers) eligible to answer calls for a number. */
-export async function getCallableAgentsForNumber(db: Database, numberId: string): Promise<string[]> {
-  const teamIds = await getTeamsForNumber(db, numberId);
-  if (teamIds.length === 0) return [];
-  const rows = await db
-    .select({ userId: teamMembers.userId })
-    .from(teamMembers)
-    .where(and(inArray(teamMembers.teamId, teamIds), inArray(teamMembers.role, ["team_admin", "agent"])));
-  return [...new Set(rows.map((r) => r.userId))];
 }
 
 export async function loadAuthenticatedUser(db: Database, userId: string): Promise<AuthenticatedUser | null> {

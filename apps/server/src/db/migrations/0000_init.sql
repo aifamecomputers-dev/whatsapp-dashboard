@@ -1,13 +1,12 @@
 CREATE TYPE "public"."call_direction" AS ENUM('inbound', 'outbound');--> statement-breakpoint
-CREATE TYPE "public"."call_status" AS ENUM('queued', 'ringing', 'in-progress', 'completed', 'busy', 'failed', 'no-answer', 'canceled');--> statement-breakpoint
-CREATE TYPE "public"."consent_event" AS ENUM('notice_played', 'recording_started', 'recording_stopped');--> statement-breakpoint
+CREATE TYPE "public"."call_status" AS ENUM('ringing', 'missed', 'rejected', 'terminated', 'failed');--> statement-breakpoint
 CREATE TYPE "public"."conversation_status" AS ENUM('open', 'pending', 'closed');--> statement-breakpoint
 CREATE TYPE "public"."message_direction" AS ENUM('inbound', 'outbound');--> statement-breakpoint
 CREATE TYPE "public"."message_status" AS ENUM('pending', 'sent', 'delivered', 'read', 'failed');--> statement-breakpoint
 CREATE TYPE "public"."message_type" AS ENUM('text', 'image', 'video', 'audio', 'document', 'sticker', 'location', 'template', 'interactive');--> statement-breakpoint
 CREATE TYPE "public"."team_role" AS ENUM('team_admin', 'agent', 'viewer');--> statement-breakpoint
 CREATE TYPE "public"."webhook_event_status" AS ENUM('pending', 'processed', 'failed');--> statement-breakpoint
-CREATE TYPE "public"."webhook_source" AS ENUM('meta', 'twilio');--> statement-breakpoint
+CREATE TYPE "public"."webhook_source" AS ENUM('meta');--> statement-breakpoint
 CREATE TYPE "public"."whatsapp_status" AS ENUM('pending', 'connected', 'disconnected');--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "audit_logs" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
@@ -23,30 +22,16 @@ CREATE TABLE IF NOT EXISTS "audit_logs" (
 CREATE TABLE IF NOT EXISTS "calls" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"number_id" uuid NOT NULL,
-	"twilio_call_sid" text,
+	"whatsapp_call_id" text,
 	"direction" "call_direction" NOT NULL,
-	"from_number" text NOT NULL,
-	"to_number" text NOT NULL,
+	"from_wa_id" text NOT NULL,
+	"to_wa_id" text NOT NULL,
 	"team_id" uuid,
-	"agent_id" uuid,
-	"status" "call_status" DEFAULT 'queued' NOT NULL,
+	"status" "call_status" DEFAULT 'ringing' NOT NULL,
 	"duration_seconds" integer,
-	"recording_sid" text,
-	"recording_local_path" text,
-	"recording_duration_seconds" integer,
-	"consent_notice_played" boolean DEFAULT false NOT NULL,
 	"started_at" timestamp with time zone,
-	"answered_at" timestamp with time zone,
 	"ended_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "consent_logs" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"call_id" uuid NOT NULL,
-	"event" "consent_event" NOT NULL,
-	"occurred_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"metadata" jsonb DEFAULT '{}'::jsonb NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "conversations" (
@@ -109,17 +94,7 @@ CREATE TABLE IF NOT EXISTS "phone_numbers" (
 	"whatsapp_access_token_tag" text,
 	"whatsapp_verified_name" text,
 	"whatsapp_status" "whatsapp_status" DEFAULT 'pending' NOT NULL,
-	"twilio_account_sid" text,
-	"twilio_auth_token_ciphertext" text,
-	"twilio_auth_token_iv" text,
-	"twilio_auth_token_tag" text,
-	"twilio_phone_sid" text,
-	"twilio_twiml_app_sid" text,
-	"twilio_api_key_sid" text,
-	"twilio_api_key_secret_ciphertext" text,
-	"twilio_api_key_secret_iv" text,
-	"twilio_api_key_secret_tag" text,
-	"voice_enabled" boolean DEFAULT false NOT NULL,
+	"whatsapp_calling_enabled" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -188,18 +163,6 @@ EXCEPTION
 END $$;
 --> statement-breakpoint
 DO $$ BEGIN
- ALTER TABLE "calls" ADD CONSTRAINT "calls_agent_id_users_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;
-EXCEPTION
- WHEN duplicate_object THEN null;
-END $$;
---> statement-breakpoint
-DO $$ BEGIN
- ALTER TABLE "consent_logs" ADD CONSTRAINT "consent_logs_call_id_calls_id_fk" FOREIGN KEY ("call_id") REFERENCES "public"."calls"("id") ON DELETE cascade ON UPDATE no action;
-EXCEPTION
- WHEN duplicate_object THEN null;
-END $$;
---> statement-breakpoint
-DO $$ BEGIN
  ALTER TABLE "conversations" ADD CONSTRAINT "conversations_number_id_phone_numbers_id_fk" FOREIGN KEY ("number_id") REFERENCES "public"."phone_numbers"("id") ON DELETE cascade ON UPDATE no action;
 EXCEPTION
  WHEN duplicate_object THEN null;
@@ -259,7 +222,7 @@ EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
 --> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS "calls_twilio_call_sid_unique" ON "calls" USING btree ("twilio_call_sid");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "calls_whatsapp_call_id_unique" ON "calls" USING btree ("whatsapp_call_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "calls_number_idx" ON "calls" USING btree ("number_id","created_at");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "conversations_number_contact_unique" ON "conversations" USING btree ("number_id","contact_wa_id");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "message_templates_number_name_lang_unique" ON "message_templates" USING btree ("number_id","name","language");--> statement-breakpoint
